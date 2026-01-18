@@ -1,35 +1,51 @@
 # bot.py
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, filters, CallbackQueryHandler
 
-import settings
 import character_manager
 import logging
+from dotenv import load_dotenv
+import os
+
+import asyncio
+import command
 
 import db_manager.profile.profile_manager
 import db_manager.mining.currency
 
 #HYPNO CAT HAY & NIKO
+load_dotenv()
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 
 currency = db_manager.mining.currency
 profile = db_manager.profile.profile_manager
+mining = db_manager.mining.mining_manager
+
+application = Application.builder().token(os.getenv("API_KEY")).build()
+
+asyncio.run(command.register_commands(application))
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 # Main bot logic
 def main():
-    # Replace with your Telegram Bot Token
-    application = Application.builder().token(settings.BOT_TOKEN).build()
+    db = db_manager.db_manager.DatabaseManager()
 
     shop_handler = ConversationHandler(
         entry_points=[CommandHandler("shop", currency.shop)],
         states={
-            currency.CHOOSE_ITEM: [CallbackQueryHandler(currency.choose_quantity)],
-            currency.ENTER_QUANTITY: [CallbackQueryHandler(currency.confirm_purchase)],
+            currency.CHOOSE_ITEM: [CallbackQueryHandler(currency.choose_item)],
+            currency.ENTER_QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, currency.enter_quantity)],
+            currency.CONFIRM_PURCHASE: [CallbackQueryHandler(currency.confirm_purchase)],
+
         },
         fallbacks=[CommandHandler("cancel", currency.cancel)],
         per_message=False,
     )
+
+
     
     # Add conversation handler for character creation
     create_handler = ConversationHandler(
@@ -44,18 +60,22 @@ def main():
             character_manager.WEAKNESSES: [MessageHandler(filters.TEXT & ~filters.COMMAND, character_manager.weaknesses)],
             character_manager.SKILLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, character_manager.skills)],
         },
-        fallbacks=[CommandHandler('cancel', character_manager.cancel)],
+        fallbacks=[CommandHandler('cancel_c', character_manager.cancel)],
         per_message=False,
     )
 
     avatar_handler = ConversationHandler(
-        entry_points=[CommandHandler("profile", profile.show_user_profile)],
+        entry_points=[CommandHandler("profile", profile.show_profile)],
         states={
             profile.CHOOSE_AVATAR: [CallbackQueryHandler(profile.choose_avatar)],
             profile.UPLOAD_AVATAR: [MessageHandler(filters.PHOTO & ~filters.COMMAND, profile.handle_new_avatar)],
         },
-        fallbacks=[CommandHandler("cancel", profile.cancel)]
+        fallbacks=[CommandHandler("cancel_a", profile.cancel)],
+        per_message=False,
     )
+
+
+    db.create_user_table()
 
     application.add_handler(shop_handler)
     application.add_handler(create_handler)
